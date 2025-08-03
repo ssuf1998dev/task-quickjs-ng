@@ -30,3 +30,19 @@ tasks:
 
   clean:
     cmd: rm -rf build
+
+  civet:
+    cmd: |
+      git submodule init
+      git submodule update
+      cd Civet
+      git apply ../Civet.patch
+      yarn install
+      yarn build
+      yarn terser dist/quickjs.mjs --compress --mangle --ecma 2015 --output dist/quickjs.min.mjs
+      xxd -i Civet/dist/quickjs.min.mjs > civet.h
+    preconditions:
+      - command -v node
+      - command -v yarn
+      - command -v git
+      - command -v xxd

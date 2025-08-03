@@ -1,0 +1,84 @@
+From 7eb0b217f0b612a738b9f0dc64a76024de488fc9 Mon Sep 17 00:00:00 2001
+From: ssuf1998dev <ssuf1998dev@126.com>
+Date: Fri, 20 Jun 2025 17:58:06 +0800
+Subject: [PATCH] feat: build quickjs
+
+---
+ build/esbuild.civet       | 25 +++++++++++++++++++++++++
+ source/quickjs-shim.civet | 19 +++++++++++++++++++
+ source/quickjs.civet      |  1 +
+ 3 files changed, 45 insertions(+)
+ create mode 100644 source/quickjs-shim.civet
+ create mode 100644 source/quickjs.civet
+
+diff --git a/build/esbuild.civet b/build/esbuild.civet
+index 18af155d..7355eead 100644
+--- a/build/esbuild.civet
++++ b/build/esbuild.civet
+@@ -175,6 +175,31 @@ build({
+   ]
+ }).catch -> process.exit 1
+
++// quickjs
++build({
++  entryPoints: ['source/quickjs.civet']
++  bundle: true
++  platform: 'node'
++  format: 'esm'
++  target: "es6"
++  outfile: 'dist/quickjs.mjs'
++  alias:
++    'node:module': './source/quickjs-shim.civet'
++    'node:path': './source/quickjs-shim.civet'
++    'node:vm': './source/quickjs-shim.civet'
++  plugins: [
++    resolveExtensions
++    heraPlugin module: true
++    civetPlugin
++  ]
++  define:
++    "process.env.CIVET_THREADS": '0'
++    "import.meta.url": '""' // avoid warning; eliminated by `dropLabels`
++  dropLabels: ['ESM_ONLY']
++  minifySyntax: true // eliminate `if (false)` from `define` setting
++  minify
++}).catch -> process.exit 1
++
+ build({
+   entryPoints: ['source/bun-civet.civet']
+   bundle: false
+diff --git a/source/quickjs-shim.civet b/source/quickjs-shim.civet
+new file mode 100644
+index 00000000..85887e71
+--- /dev/null
++++ b/source/quickjs-shim.civet
+@@ -0,0 +1,19 @@
++// Shimmed node:path and node:module for quickjs build
++
++// node:path
++export function dirname(path: string): string
++  path.replace /[^]*\//, ''
++export function resolve(path: string): string
++  path
++
++// node:module
++export function createRequire(path: string): (id: string) => unknown
++  (id: string) =>
++    throw new ReferenceError
++      "Civet comptime does not support 'require' on this platform"
++
++export default {
++  dirname
++  resolve
++  createRequire
++}
+diff --git a/source/quickjs.civet b/source/quickjs.civet
+new file mode 100644
+index 00000000..a57f4266
+--- /dev/null
++++ b/source/quickjs.civet
+@@ -0,0 +1 @@
++export * as Civet from ./main.civet
+--
+2.49.0
+

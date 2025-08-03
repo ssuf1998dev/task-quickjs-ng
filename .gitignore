@@ -1,6 +1,7 @@
 build
 .vscode/*
 !.vscode/extensions.json
+civet.h
 
 # Prerequisites
 *.d

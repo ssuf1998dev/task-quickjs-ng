@@ -4,3 +4,6 @@
 [submodule "quickjs"]
 	path = quickjs
 	url = https://github.com/quickjs-ng/quickjs.git
+[submodule "Civet"]
+	path = Civet
+	url = https://github.com/DanielXMoore/Civet.git
