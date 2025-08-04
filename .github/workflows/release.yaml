@@ -33,12 +33,12 @@ jobs:
         run: |
           git submodule init
           git submodule update
-          apt-get update
+          sudo apt-get update
           if ! command -v yarn &> /dev/null; then
             npm install -g yarn
           fi
           if ! command -v xxd &> /dev/null; then
-            apt-get install -y xxd
+            sudo apt-get install -y xxd
           fi
 
       - name: Build civet
