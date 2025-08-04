@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(quickjs-ng-extism LANGUAGES C)
+project(task-quickjs-ng LANGUAGES C)
 
 add_subdirectory(quickjs)
 
