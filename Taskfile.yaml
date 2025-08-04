@@ -22,13 +22,6 @@ tasks:
     preconditions:
       - command -v docker
 
-  build:
-    cmds:
-      - task: cmake
-      - task: make
-    preconditions:
-      - command -v docker
-
   clean:
     cmd: rm -rf build
 
@@ -41,9 +34,22 @@ tasks:
       yarn install
       yarn build
       yarn terser dist/quickjs.mjs --compress --mangle --ecma 2015 --output dist/quickjs.min.mjs
-      xxd -i Civet/dist/quickjs.min.mjs > civet.h
+      git apply -R ../Civet.patch
+      cd .. && xxd -i Civet/dist/quickjs.min.mjs > civet.h
     preconditions:
       - command -v node
       - command -v yarn
       - command -v git
       - command -v xxd
+
+  docker:act:
+    desc: Build runner image for act
+    dir: docker
+    cmd: docker build --progress=plain --no-cache --network host -f Dockerfile.nektosact -t ssuf1998dev/wasi-sdk:27-act .
+    preconditions:
+      - command -v docker
+
+  act:
+    cmd: act --action-offline-mode --rm -P ubuntu-22.04=ssuf1998dev/wasi-sdk:27-act push
+    preconditions:
+      - command -v act

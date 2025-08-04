@@ -1,0 +1,66 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup wasi-sdk
+        if: ${{ !env.ACT }}
+        run: |
+          wget -nv https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-27/wasi-sdk-27.0-x86_64-linux.deb -P /tmp
+          sudo apt install /tmp/wasi-sdk*.deb
+
+      - name: Setup node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prebuild
+        run: |
+          git submodule init
+          git submodule update
+          apt-get update
+          if ! command -v yarn &> /dev/null; then
+            npm install -g yarn
+          fi
+          if ! command -v xxd &> /dev/null; then
+            apt-get install -y xxd
+          fi
+
+      - name: Build civet
+        run: |
+          cd Civet
+          git apply ../Civet.patch
+          yarn install
+          yarn build
+          yarn terser dist/quickjs.mjs --compress --mangle --ecma 2015 --output dist/quickjs.min.mjs
+          git apply -R ../Civet.patch
+          cd .. && xxd -i Civet/dist/quickjs.min.mjs > civet.h
+
+      - name: Build
+        run: |
+          cmake -B build -DQJS_ENABLE_CIVET=ON -DCMAKE_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk.cmake
+          make -C build task_qjs
+
+      - name: Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            build/qjs.wasm
+            LICENSE
