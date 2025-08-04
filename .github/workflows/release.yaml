@@ -20,6 +20,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Git submodule
+        run: |
+          git submodule init
+          git submodule update
+
       - name: Setup wasi-sdk
         if: ${{ !env.ACT }}
         run: |
@@ -30,16 +35,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: yarn
+          cache-dependency-path: Civet/yarn.lock
 
-      - name: Prebuild
+      - name: Dependencies
         run: |
-          git submodule init
-          git submodule update
-          sudo apt-get update
           if ! command -v yarn &> /dev/null; then
             npm install -g yarn
           fi
           if ! command -v xxd &> /dev/null; then
+            sudo apt-get update
             sudo apt-get install -y xxd
           fi
 
@@ -65,4 +70,3 @@ jobs:
           draft: true
           files: |
             build/qjs.wasm
-            LICENSE
