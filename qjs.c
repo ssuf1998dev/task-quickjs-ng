@@ -349,7 +349,22 @@ int32_t EXTISM_EXPORTED_FUNCTION(civet)
 
 int32_t EXTISM_EXPORTED_FUNCTION(getVersion)
 {
-  const char *ver = JS_GetVersion();
+  uint64_t input_len = extism_input_length();
+  uint8_t input_data[input_len + 1];
+  extism_load_input(0, input_data, input_len);
+  input_data[input_len] = '\0';
+  const char *key = (char *)input_data;
+
+  char *ver;
+#ifdef QJS_ENABLE_CIVET
+  if (strcmp(key, "civet") == 0)
+#ifdef CIVET_VERSION
+    ver = CIVET_VERSION;
+#endif // CIVET_VERSION
+  else
+#endif // QJS_ENABLE_CIVET
+    ver = (char *)JS_GetVersion();
+
   const uint64_t len = strlen(ver);
   ExtismHandle handle = extism_alloc(len);
   extism_store_to_handle(handle, 0, ver, len);
