@@ -7,13 +7,6 @@
 #include "civet.h"
 #endif
 
-static JSValue js_navigator_get_userAgent(JSContext *ctx, JSValueConst this_val)
-{
-  char version[32];
-  snprintf(version, sizeof(version), "quickjs-ng/%s", JS_GetVersion());
-  return JS_NewString(ctx, version);
-}
-
 static JSValue js_gc(JSContext *ctx, JSValueConst this_val,
                      int argc, JSValueConst *argv)
 {
@@ -23,11 +16,6 @@ static JSValue js_gc(JSContext *ctx, JSValueConst this_val,
 
 static const JSCFunctionListEntry global_obj[] = {
     JS_CFUNC_DEF("gc", 0, js_gc),
-};
-
-static const JSCFunctionListEntry navigator_proto_funcs[] = {
-    JS_CGETSET_DEF2("userAgent", js_navigator_get_userAgent, NULL, JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE),
-    JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Navigator", JS_PROP_CONFIGURABLE),
 };
 
 static JSContext *JS_NewCustomContext(JSRuntime *rt)
@@ -43,12 +31,7 @@ static JSContext *JS_NewCustomContext(JSRuntime *rt)
   JSValue global = JS_GetGlobalObject(ctx);
   JS_SetPropertyFunctionList(ctx, global, global_obj, countof(global_obj));
 
-  JSValue navigator_proto = JS_NewObject(ctx);
-  JS_SetPropertyFunctionList(ctx, navigator_proto, navigator_proto_funcs, countof(navigator_proto_funcs));
-  JSValue navigator = JS_NewObjectProto(ctx, navigator_proto);
-  JS_DefinePropertyValueStr(ctx, global, "navigator", navigator, JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE);
   JS_FreeValue(ctx, global);
-  JS_FreeValue(ctx, navigator_proto);
 
   js_std_add_helpers(ctx, -1, 0);
 
@@ -101,7 +84,7 @@ exception:
   JS_FreeValue(ctx, obj);
   JS_FreeValue(ctx, val);
   js_free(ctx, write_obj_ptr);
-  js_std_dump_error(ctx);
+  // js_std_dump_error(ctx);
   return JS_UNDEFINED;
 }
 #endif
@@ -186,7 +169,7 @@ static JSValue eval_buf(JSContext *ctx, const void *buf, int buf_len,
       if (js_module_set_import_meta(ctx, val, use_realpath, true) < 0)
       {
         val = JS_GetException(ctx);
-        goto end;
+        return val;
       }
       val = JS_EvalFunction(ctx, val);
     }
@@ -195,7 +178,6 @@ static JSValue eval_buf(JSContext *ctx, const void *buf, int buf_len,
   else
     val = JS_Eval(ctx, buf, buf_len, filename, eval_flags);
 
-end:
   return val;
 }
 
@@ -328,7 +310,8 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
 #ifdef QJS_ENABLE_CIVET
 int32_t EXTISM_EXPORTED_FUNCTION(civet)
 {
-  init_js();
+  if (!init_js())
+    return 1;
 
   uint64_t input_len = extism_input_length();
   uint8_t input_data[input_len + 1];
