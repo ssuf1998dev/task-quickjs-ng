@@ -3,6 +3,9 @@
 #include "quickjs/quickjs.h"
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/cutils.h"
+#ifdef QJS_ENABLE_CIVET
+#include "civet.h"
+#endif
 
 static JSValue js_navigator_get_userAgent(JSContext *ctx, JSValueConst this_val)
 {
@@ -52,16 +55,64 @@ static JSContext *JS_NewCustomContext(JSRuntime *rt)
   return ctx;
 }
 
-JSRuntime *rt;
-JSContext *ctx;
+static JSRuntime *rt;
+static JSContext *ctx;
+#ifdef QJS_ENABLE_CIVET
+static JSValue civet_mod = JS_UNDEFINED;
+
+static JSValue load_civet()
+{
+  JSModuleDef *mod_def;
+  JSValue obj, val;
+
+  Civet_dist_quickjs_min_mjs[Civet_dist_quickjs_min_mjs_len] = '\0';
+  JSValue mod_val = JS_Eval(ctx, (char *)Civet_dist_quickjs_min_mjs, Civet_dist_quickjs_min_mjs_len, "civet.min.mjs", JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+
+  uint8_t *write_obj_ptr;
+
+  if (JS_IsException(mod_val))
+    goto exception;
+
+  size_t write_obj_len = 0;
+  write_obj_ptr = JS_WriteObject(ctx, &write_obj_len, mod_val, JS_WRITE_OBJ_BYTECODE);
+  if (!write_obj_ptr || write_obj_len <= 0)
+    goto exception;
+
+  JS_FreeValue(ctx, mod_val);
+  obj = JS_ReadObject(ctx, write_obj_ptr, write_obj_len, JS_READ_OBJ_BYTECODE);
+  js_free(ctx, write_obj_ptr);
+  if (JS_IsException(obj) || !JS_IsModule(obj))
+    goto exception;
+  if (JS_ResolveModule(ctx, obj) < 0 || js_module_set_import_meta(ctx, obj, false, true) < 0)
+    goto exception;
+
+  val = JS_EvalFunction(ctx, JS_DupValue(ctx, obj));
+  val = js_std_await(ctx, val);
+  if (JS_IsException(val))
+    goto exception;
+
+  JS_FreeValue(ctx, val);
+  mod_def = JS_VALUE_GET_PTR(obj);
+  JS_FreeValue(ctx, obj);
+  return JS_GetModuleNamespace(ctx, mod_def);
+
+exception:
+  JS_FreeValue(ctx, mod_val);
+  JS_FreeValue(ctx, obj);
+  JS_FreeValue(ctx, val);
+  js_free(ctx, write_obj_ptr);
+  js_std_dump_error(ctx);
+  return JS_UNDEFINED;
+}
+#endif
 
 static bool init_js()
 {
   rt = JS_NewRuntime();
   if (!rt)
   {
-    ExtismHandle err = extism_alloc_buf_from_sz("cannot allocate JS runtime");
-    extism_error_set(err);
+    extism_error_set(
+        extism_alloc_buf_from_sz("cannot allocate JS runtime."));
     return false;
   }
 
@@ -74,10 +125,14 @@ static bool init_js()
   ctx = JS_NewCustomContext(rt);
   if (!ctx)
   {
-    ExtismHandle err = extism_alloc_buf_from_sz("cannot allocate JS context");
-    extism_error_set(err);
+    extism_error_set(
+        extism_alloc_buf_from_sz("cannot allocate JS context."));
     return false;
   }
+
+#ifdef QJS_ENABLE_CIVET
+  civet_mod = load_civet();
+#endif
 
   return true;
 }
@@ -144,14 +199,64 @@ end:
   return val;
 }
 
+#ifdef QJS_ENABLE_CIVET
+static const char *civet_compile(const char *source)
+{
+  if (JS_IsUndefined(civet_mod))
+    return NULL;
+
+  JSValue fn = JS_GetPropertyStr(ctx, civet_mod, "Civet");
+  fn = JS_GetPropertyStr(ctx, fn, "default");
+  fn = JS_GetPropertyStr(ctx, fn, "compile");
+
+  JSValue options = JS_NewObject(ctx);
+  JS_SetPropertyStr(ctx, options, "sync", JS_NewBool(ctx, true));
+  JSValue argv[2] = {
+      JS_NewString(ctx, source),
+      options,
+  };
+  JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 2, argv);
+
+  JS_FreeValue(ctx, fn);
+  JS_FreeValue(ctx, argv[0]);
+  JS_FreeValue(ctx, argv[1]);
+
+  return JS_ToCString(ctx, ret);
+}
+#endif
+
 /* -------------------------------- exported -------------------------------- */
+
+int32_t EXTISM_EXPORTED_FUNCTION(warmup)
+{
+  return init_js() ? 0 : 1;
+}
 
 int32_t EXTISM_EXPORTED_FUNCTION(eval)
 {
-  if (!init_js())
-    return 1;
+  const char *warmup_str = get_config("eval.warmup");
+  bool warmup = true;
+  if (warmup_str)
+    warmup = strcmp(warmup_str, "true") == 0;
+  free((void *)warmup_str);
+  warmup_str = NULL;
 
-  const char *memory_limit_str = get_config("memoryLimit");
+  if (warmup)
+  {
+    if (!init_js())
+      return 1;
+  }
+  else
+  {
+    if (!rt || !ctx)
+    {
+      extism_error_set(
+          extism_alloc_buf_from_sz("JS runtime or context is not ready, did you warmup?"));
+      return 1;
+    }
+  }
+
+  const char *memory_limit_str = get_config("eval.memoryLimit");
   if (memory_limit_str)
   {
     int memory_limit = atoi(memory_limit_str);
@@ -161,7 +266,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   free((void *)memory_limit_str);
   memory_limit_str = NULL;
 
-  const char *stack_size_str = get_config("stackSize");
+  const char *stack_size_str = get_config("eval.stackSize");
   if (stack_size_str)
   {
     int stack_size = atoi(stack_size_str);
@@ -171,13 +276,21 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   free((void *)stack_size_str);
   stack_size_str = NULL;
 
-  const char *module_str = get_config("module");
-
   uint64_t input_len = extism_input_length();
-  uint8_t input_data[input_len];
+  uint8_t input_data[input_len + 1];
   extism_load_input(0, input_data, input_len);
+  input_data[input_len] = '\0';
   const char *script = (char *)input_data;
 
+  const char *dialect = get_config("eval.dialect");
+#ifdef QJS_ENABLE_CIVET
+  if (strcmp(dialect, "civet") == 0)
+    script = civet_compile(script);
+#endif
+  free((void *)dialect);
+  dialect = NULL;
+
+  const char *module_str = get_config("eval.module");
   bool module;
   if (!module_str)
     module = JS_DetectModule(script, strlen(script));
@@ -204,13 +317,35 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
     js_std_dump_error(ctx);
     JS_FreeValue(ctx, val);
     deinit_js();
-    return 1;
+    return 2;
   }
 
   JS_FreeValue(ctx, val);
   deinit_js();
   return 0;
 }
+
+#ifdef QJS_ENABLE_CIVET
+int32_t EXTISM_EXPORTED_FUNCTION(civet)
+{
+  init_js();
+
+  uint64_t input_len = extism_input_length();
+  uint8_t input_data[input_len + 1];
+  extism_load_input(0, input_data, input_len);
+  input_data[input_len] = '\0';
+  const char *script = (char *)input_data;
+  script = civet_compile(script);
+
+  const uint64_t len = strlen(script);
+  ExtismHandle handle = extism_alloc(len);
+  extism_store_to_handle(handle, 0, script, len);
+  extism_output_set_from_handle(handle, 0, len);
+
+  deinit_js();
+  return 0;
+}
+#endif
 
 int32_t EXTISM_EXPORTED_FUNCTION(getVersion)
 {

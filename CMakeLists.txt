@@ -13,13 +13,15 @@ add_link_options(
     -lwasi-emulated-signal
 )
 
-add_executable(qjs_extism
+xoption(QJS_ENABLE_CIVET "Civet integration" OFF)
+
+add_executable(task_qjs
     qjs.c
 )
-target_sources(qjs_extism PRIVATE quickjs/quickjs-libc.c)
-set_target_properties(qjs_extism PROPERTIES
+target_sources(task_qjs PRIVATE quickjs/quickjs-libc.c)
+set_target_properties(task_qjs PROPERTIES
     OUTPUT_NAME "qjs.wasm"
 )
-target_compile_definitions(qjs_extism PRIVATE _GNU_SOURCE)
-target_link_libraries(qjs_extism qjs)
-set_target_properties(qjs_extism PROPERTIES ENABLE_EXPORTS TRUE)
+target_compile_definitions(task_qjs PRIVATE _GNU_SOURCE)
+target_link_libraries(task_qjs qjs)
+set_target_properties(task_qjs PROPERTIES ENABLE_EXPORTS TRUE)

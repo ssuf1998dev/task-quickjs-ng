@@ -11,12 +11,14 @@ tasks:
     - command -v extism
 
   make:
-    cmd: $DOCKER_RUN make -C build qjs_extism
+    cmds:
+      - $DOCKER_RUN make -C build task_qjs
+      - ls -lh build/qjs.wasm
     preconditions:
       - command -v docker
 
   cmake:
-    cmd: $DOCKER_RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk.cmake
+    cmd: $DOCKER_RUN cmake -B build -DQJS_ENABLE_CIVET=ON -DCMAKE_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk.cmake
     preconditions:
       - command -v docker
 
@@ -24,7 +26,6 @@ tasks:
     cmds:
       - task: cmake
       - task: make
-      - ls -lh build/qjs.wasm
     preconditions:
       - command -v docker
 
