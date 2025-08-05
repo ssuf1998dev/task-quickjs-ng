@@ -80,10 +80,18 @@ static JSValue load_civet()
   return JS_GetModuleNamespace(ctx, mod_def);
 
 exception:
-  JS_FreeValue(ctx, mod_val);
-  JS_FreeValue(ctx, obj);
-  JS_FreeValue(ctx, val);
-  js_free(ctx, write_obj_ptr);
+  if (!JS_IsUninitialized(mod_val))
+    JS_FreeValue(ctx, mod_val);
+
+  if (!JS_IsUninitialized(obj))
+    JS_FreeValue(ctx, obj);
+
+  if (!JS_IsUninitialized(val))
+    JS_FreeValue(ctx, val);
+
+  if (write_obj_ptr)
+    js_free(ctx, write_obj_ptr);
+
   // js_std_dump_error(ctx);
   return JS_UNDEFINED;
 }
@@ -136,13 +144,13 @@ static const char *get_config(const char *key)
   ExtismHandle value = extism_config_get(extism_alloc_buf_from_sz(key));
 
   if (value == 0)
-    return 0;
+    return NULL;
 
   const uint64_t value_len = extism_length(value);
 
   uint8_t *value_data = malloc(value_len + 1);
   if (value_data == NULL)
-    return 0;
+    return NULL;
 
   extism_load_from_handle(value, 0, value_data, value_len);
   value_data[value_len] = '\0';
@@ -219,9 +227,11 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   const char *warmup_str = get_config("eval.warmup");
   bool warmup = true;
   if (warmup_str)
+  {
     warmup = strcmp(warmup_str, "true") == 0;
-  free((void *)warmup_str);
-  warmup_str = NULL;
+    free((void *)warmup_str);
+    warmup_str = NULL;
+  }
 
   if (warmup)
   {
@@ -243,20 +253,20 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   {
     int memory_limit = atoi(memory_limit_str);
     if (memory_limit >= 0)
-      JS_SetMemoryLimit(rt, (size_t)&memory_limit);
+      JS_SetMemoryLimit(rt, (size_t)memory_limit);
+    free((void *)memory_limit_str);
+    memory_limit_str = NULL;
   }
-  free((void *)memory_limit_str);
-  memory_limit_str = NULL;
 
   const char *stack_size_str = get_config("eval.stackSize");
   if (stack_size_str)
   {
     int stack_size = atoi(stack_size_str);
     if (stack_size >= 0)
-      JS_SetMaxStackSize(rt, (size_t)&stack_size);
+      JS_SetMaxStackSize(rt, (size_t)stack_size);
+    free((void *)stack_size_str);
+    stack_size_str = NULL;
   }
-  free((void *)stack_size_str);
-  stack_size_str = NULL;
 
   uint64_t input_len = extism_input_length();
   uint8_t input_data[input_len + 1];
@@ -265,12 +275,15 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   const char *script = (char *)input_data;
 
   const char *dialect = get_config("eval.dialect");
+  if (dialect)
+  {
 #ifdef QJS_ENABLE_CIVET
-  if (strcmp(dialect, "civet") == 0)
-    script = civet_compile(script);
+    if (strcmp(dialect, "civet") == 0)
+      script = civet_compile(script);
 #endif
-  free((void *)dialect);
-  dialect = NULL;
+    free((void *)dialect);
+    dialect = NULL;
+  }
 
   const char *module_str = get_config("eval.module");
   bool module;
@@ -294,6 +307,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   }
   int flags = module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL;
   JSValue val = eval_buf(ctx, script, strlen(script), "<eval>", flags);
+  free((void *)script);
   if (JS_IsException(val))
   {
     js_std_dump_error(ctx);
@@ -324,6 +338,8 @@ int32_t EXTISM_EXPORTED_FUNCTION(civet)
   ExtismHandle handle = extism_alloc(len);
   extism_store_to_handle(handle, 0, script, len);
   extism_output_set_from_handle(handle, 0, len);
+
+  free((void *)script);
 
   deinit_js();
   return 0;
