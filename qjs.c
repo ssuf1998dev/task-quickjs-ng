@@ -222,6 +222,12 @@ int32_t EXTISM_EXPORTED_FUNCTION(warmup)
   return init_js() ? 0 : 1;
 }
 
+int32_t EXTISM_EXPORTED_FUNCTION(cleanup)
+{
+  deinit_js();
+  return 0;
+}
+
 int32_t EXTISM_EXPORTED_FUNCTION(eval)
 {
   const char *warmup_str = get_config("eval.warmup");
@@ -233,7 +239,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
     warmup_str = NULL;
   }
 
-  if (warmup)
+  if (warmup && (!rt || !ctx))
   {
     if (!init_js())
       return 1;
@@ -312,12 +318,10 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   {
     js_std_dump_error(ctx);
     JS_FreeValue(ctx, val);
-    deinit_js();
     return 2;
   }
 
   JS_FreeValue(ctx, val);
-  deinit_js();
   return 0;
 }
 
@@ -341,7 +345,6 @@ int32_t EXTISM_EXPORTED_FUNCTION(civet)
 
   free((void *)script);
 
-  deinit_js();
   return 0;
 }
 #endif

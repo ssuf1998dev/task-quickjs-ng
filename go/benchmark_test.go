@@ -27,6 +27,7 @@ func BenchmarkLoad(b *testing.B) {
 	}
 
 	defer plugin.Close(ctx)
+	defer plugin.Call("cleanup", nil)
 
 	_, _, err = plugin.Call("warmup", nil)
 
