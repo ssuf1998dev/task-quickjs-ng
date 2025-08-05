@@ -1,4 +1,4 @@
-package taskquickjsng
+package tqn_test
 
 import (
 	"context"
