@@ -97,14 +97,14 @@ exception:
 }
 #endif
 
-static bool init_js()
+static int init_js()
 {
   rt = JS_NewRuntime();
   if (!rt)
   {
     extism_error_set(
         extism_alloc_buf_from_sz("cannot allocate JS runtime."));
-    return false;
+    return 1;
   }
 
   js_std_set_worker_new_context_func(JS_NewCustomContext);
@@ -118,14 +118,14 @@ static bool init_js()
   {
     extism_error_set(
         extism_alloc_buf_from_sz("cannot allocate JS context."));
-    return false;
+    return 1;
   }
 
 #ifdef QJS_ENABLE_CIVET
   civet_mod = load_civet();
 #endif
 
-  return true;
+  return 0;
 }
 
 static void deinit_js()
@@ -219,7 +219,7 @@ static const char *civet_compile(const char *source)
 
 int32_t EXTISM_EXPORTED_FUNCTION(warmup)
 {
-  return init_js() ? 0 : 1;
+  return init_js();
 }
 
 int32_t EXTISM_EXPORTED_FUNCTION(cleanup)
@@ -230,28 +230,23 @@ int32_t EXTISM_EXPORTED_FUNCTION(cleanup)
 
 int32_t EXTISM_EXPORTED_FUNCTION(eval)
 {
-  const char *warmup_str = get_config("eval.warmup");
-  bool warmup = true;
-  if (warmup_str)
+  const char *cli_str = get_config("cli");
+  bool cli = false;
+  if (cli_str)
   {
-    warmup = strcmp(warmup_str, "true") == 0;
-    free((void *)warmup_str);
-    warmup_str = NULL;
+    cli = strcmp(cli_str, "true") == 0;
+    free((void *)cli_str);
+    cli_str = NULL;
   }
 
-  if (warmup && (!rt || !ctx))
+  if (cli && init_js())
+    return 1;
+
+  if (!rt || !ctx)
   {
-    if (!init_js())
-      return 1;
-  }
-  else
-  {
-    if (!rt || !ctx)
-    {
-      extism_error_set(
-          extism_alloc_buf_from_sz("JS runtime or context is not ready, did you warmup?"));
-      return 1;
-    }
+    extism_error_set(
+        extism_alloc_buf_from_sz("JS runtime or context is not ready, did you warmup?"));
+    return 1;
   }
 
   const char *memory_limit_str = get_config("eval.memoryLimit");
@@ -318,18 +313,38 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   {
     js_std_dump_error(ctx);
     JS_FreeValue(ctx, val);
+    if (cli)
+      deinit_js();
     return 2;
   }
 
   JS_FreeValue(ctx, val);
+  if (cli)
+    deinit_js();
   return 0;
 }
 
 #ifdef QJS_ENABLE_CIVET
 int32_t EXTISM_EXPORTED_FUNCTION(civet)
 {
-  if (!init_js())
+  const char *cli_str = get_config("cli");
+  bool cli = false;
+  if (cli_str)
+  {
+    cli = strcmp(cli_str, "true") == 0;
+    free((void *)cli_str);
+    cli_str = NULL;
+  }
+
+  if (cli && init_js())
     return 1;
+
+  if (!rt || !ctx)
+  {
+    extism_error_set(
+        extism_alloc_buf_from_sz("JS runtime or context is not ready, did you warmup?"));
+    return 1;
+  }
 
   uint64_t input_len = extism_input_length();
   uint8_t input_data[input_len + 1];
@@ -344,6 +359,9 @@ int32_t EXTISM_EXPORTED_FUNCTION(civet)
   extism_output_set_from_handle(handle, 0, len);
 
   free((void *)script);
+
+  if (cli)
+    deinit_js();
 
   return 0;
 }
@@ -360,12 +378,16 @@ int32_t EXTISM_EXPORTED_FUNCTION(getVersion)
   char *ver;
 #ifdef QJS_ENABLE_CIVET
   if (strcmp(key, "civet") == 0)
+  {
 #ifdef CIVET_VERSION
     ver = CIVET_VERSION;
 #endif // CIVET_VERSION
+  }
   else
 #endif // QJS_ENABLE_CIVET
+  {
     ver = (char *)JS_GetVersion();
+  }
 
   const uint64_t len = strlen(ver);
   ExtismHandle handle = extism_alloc(len);

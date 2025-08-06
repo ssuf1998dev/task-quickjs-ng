@@ -6,7 +6,7 @@ env:
 
 tasks:
   default:
-    cmd: extism call --wasi --log-level=info build/qjs.wasm {{.CLI_ARGS}}
+    cmd: extism call --wasi --log-level=info --config cli=true build/qjs.wasm {{.CLI_ARGS}}
   preconditions:
     - command -v extism
 
