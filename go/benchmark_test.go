@@ -5,15 +5,12 @@ import (
 	"testing"
 
 	extism "github.com/extism/go-sdk"
+	"github.com/stretchr/testify/require"
 )
 
 func BenchmarkLoad(b *testing.B) {
 	manifest := extism.Manifest{
-		Wasm: []extism.Wasm{
-			extism.WasmFile{
-				Path: "../build/qjs.wasm",
-			},
-		},
+		Wasm: []extism.Wasm{extism.WasmFile{Path: "../build/qjs.wasm"}},
 	}
 
 	ctx := context.Background()
@@ -21,17 +18,9 @@ func BenchmarkLoad(b *testing.B) {
 		EnableWasi: true,
 	}
 	plugin, err := extism.NewPlugin(ctx, manifest, config, []extism.HostFunction{})
-
-	if err != nil {
-		b.Error(err)
-	}
-
+	require.NoError(b, err)
 	defer plugin.Close(ctx)
-	defer plugin.Call("cleanup", nil)
 
 	_, _, err = plugin.Call("warmup", nil)
-
-	if err != nil {
-		b.Error(err)
-	}
+	require.NoError(b, err)
 }
