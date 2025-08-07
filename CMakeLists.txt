@@ -13,6 +13,10 @@ add_link_options(
     -lwasi-emulated-signal
 )
 
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--strip-debug")
+# https://github.com/WebAssembly/wasi-sdk/issues/541
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=1048576")
+
 xoption(QJS_ENABLE_CIVET "Civet integration" OFF)
 
 add_executable(task_qjs
