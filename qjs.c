@@ -31,6 +31,11 @@ static JSContext *JS_NewCustomContext(JSRuntime *rt)
   JSValue global = JS_GetGlobalObject(ctx);
   JS_SetPropertyFunctionList(ctx, global, global_obj, countof(global_obj));
 
+  JSValue js_process = JS_NewObject(ctx);
+  JSValue js_process_env = JS_NewObject(ctx);
+  JS_SetPropertyStr(ctx, js_process, "env", js_process_env);
+  JS_SetPropertyStr(ctx, global, "process", js_process);
+
   JS_FreeValue(ctx, global);
 
   js_std_add_helpers(ctx, -1, 0);
@@ -245,6 +250,65 @@ int32_t EXTISM_EXPORTED_FUNCTION(warmup)
 //   return 0;
 // }
 
+int32_t EXTISM_EXPORTED_FUNCTION(setEnv)
+{
+  JSValue global = JS_GetGlobalObject(ctx);
+  JSValue js_process = JS_GetPropertyStr(ctx, global, "process");
+  JSValue js_process_env = JS_GetPropertyStr(ctx, js_process, "env");
+
+  const char *delim = ";=";
+
+  uint64_t input_len = extism_input_length();
+  uint8_t input_data[input_len + 1];
+  extism_load_input(0, input_data, input_len);
+  input_data[input_len] = '\0';
+  char *pairs = (char *)input_data;
+
+  char *setenv_script = "import { setenv } from 'qjs:std';";
+
+  char *token = strtok(pairs, delim);
+  char *key = "";
+  while (token != NULL)
+  {
+    if (strlen(key))
+    {
+      if (strlen(token))
+      {
+        char *line;
+        sprintf(line, "setenv(`%s`, `%s`);", key, token);
+        strcat(setenv_script, line);
+        if (JS_IsObject(js_process_env))
+          JS_SetPropertyStr(ctx, js_process_env, key, JS_NewString(ctx, token));
+      }
+      key = "";
+    }
+    else
+    {
+      key = token;
+    }
+
+    token = strtok(NULL, delim);
+  }
+
+  eval_buf(ctx, setenv_script, strlen(setenv_script), "<setenv>", JS_EVAL_TYPE_MODULE);
+  free((void *)setenv_script);
+  setenv_script = NULL;
+
+  JS_FreeValue(ctx, global);
+
+  return 0;
+}
+
+int32_t EXTISM_EXPORTED_FUNCTION(unsetEnv)
+{
+  const char *unsetenv_script =
+      "import { unsetenv, getenviron } from 'qjs:std';\n"
+      "Object.keys(getenviron()??{}).forEach(key=>unsetenv(key))\n"
+      "process.env={};\n";
+  eval_buf(ctx, unsetenv_script, strlen(unsetenv_script), "<unsetenv>", JS_EVAL_TYPE_MODULE);
+  return 0;
+}
+
 int32_t EXTISM_EXPORTED_FUNCTION(eval)
 {
   const char *cli_str = get_config("cli");
@@ -324,16 +388,30 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   free((void *)module_str);
   module_str = NULL;
 
+  const char *dir = get_config("eval.dir");
+  if (dir)
+  {
+    char *chdir_script;
+    sprintf(chdir_script, "import { chdir, getcwd } from 'qjs:os';chdir(`%s`);", dir);
+    eval_buf(ctx, chdir_script, strlen(chdir_script), "<chdir>", JS_EVAL_TYPE_MODULE);
+    free((void *)dir);
+    dir = NULL;
+    free((void *)chdir_script);
+    chdir_script = NULL;
+  }
+
   if (!module)
   {
-    const char *str =
+    const char *shims_script =
         "import * as bjson from 'qjs:bjson';\n"
         "import * as std from 'qjs:std';\n"
         "import * as os from 'qjs:os';\n"
         "globalThis.bjson = bjson;\n"
         "globalThis.std = std;\n"
         "globalThis.os = os;\n";
-    eval_buf(ctx, str, strlen(str), "<input>", JS_EVAL_TYPE_MODULE);
+    eval_buf(ctx, shims_script, strlen(shims_script), "<shims>", JS_EVAL_TYPE_MODULE);
+    free((void *)shims_script);
+    shims_script = NULL;
   }
   int flags = module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL;
   JSValue val = eval_buf(ctx, script, strlen(script), "<eval>", flags);
