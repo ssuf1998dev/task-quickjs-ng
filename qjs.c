@@ -41,7 +41,7 @@ static JSContext *JS_NewCustomContext(JSRuntime *rt)
 static JSRuntime *rt;
 static JSContext *ctx;
 #ifdef QJS_ENABLE_CIVET
-static JSValue civet_mod = JS_UNDEFINED;
+static JSValue civet_mod = JS_UNINITIALIZED;
 
 static JSValue load_civet()
 {
@@ -92,8 +92,7 @@ exception:
   if (write_obj_ptr)
     js_free(ctx, write_obj_ptr);
 
-  // js_std_dump_error(ctx);
-  return JS_UNDEFINED;
+  return JS_UNINITIALIZED;
 }
 #endif
 
@@ -130,13 +129,25 @@ static int init_js()
 
 static void deinit_js()
 {
+  if (ctx)
+  {
+#ifdef QJS_ENABLE_CIVET
+    if (!JS_IsUninitialized(civet_mod))
+    {
+      JS_FreeValue(ctx, civet_mod);
+      civet_mod = JS_UNINITIALIZED;
+    }
+#endif
+    JS_FreeContext(ctx);
+  }
+  ctx = NULL;
+
   if (rt)
   {
     js_std_free_handlers(rt);
-    if (ctx)
-      JS_FreeContext(ctx);
     JS_FreeRuntime(rt);
   }
+  rt = NULL;
 }
 
 static const char *get_config(const char *key)
@@ -190,14 +201,14 @@ static JSValue eval_buf(JSContext *ctx, const void *buf, int buf_len,
 }
 
 #ifdef QJS_ENABLE_CIVET
-static const char *civet_compile(const char *source)
+static JSValue civet_compile(const char *source)
 {
-  if (JS_IsUndefined(civet_mod))
-    return NULL;
+  if (JS_IsUninitialized(civet_mod))
+    return JS_UNINITIALIZED;
 
-  JSValue fn = JS_GetPropertyStr(ctx, civet_mod, "Civet");
-  fn = JS_GetPropertyStr(ctx, fn, "default");
-  fn = JS_GetPropertyStr(ctx, fn, "compile");
+  JSValue export = JS_GetPropertyStr(ctx, civet_mod, "Civet");
+  JSValue d = JS_GetPropertyStr(ctx, export, "default");
+  JSValue fn = JS_GetPropertyStr(ctx, d, "compile");
 
   JSValue options = JS_NewObject(ctx);
   JS_SetPropertyStr(ctx, options, "sync", JS_NewBool(ctx, true));
@@ -208,10 +219,16 @@ static const char *civet_compile(const char *source)
   JSValue ret = JS_Call(ctx, fn, JS_UNDEFINED, 2, argv);
 
   JS_FreeValue(ctx, fn);
+  JS_FreeValue(ctx, d);
+  JS_FreeValue(ctx, export);
   JS_FreeValue(ctx, argv[0]);
   JS_FreeValue(ctx, argv[1]);
 
-  return JS_ToCString(ctx, ret);
+  JSValue err = JS_GetException(ctx);
+  if (!JS_IsUninitialized(err))
+    return err;
+
+  return ret;
 }
 #endif
 
@@ -222,11 +239,11 @@ int32_t EXTISM_EXPORTED_FUNCTION(warmup)
   return init_js();
 }
 
-int32_t EXTISM_EXPORTED_FUNCTION(cleanup)
-{
-  deinit_js();
-  return 0;
-}
+// int32_t EXTISM_EXPORTED_FUNCTION(cleanup)
+// {
+//   deinit_js();
+//   return 0;
+// }
 
 int32_t EXTISM_EXPORTED_FUNCTION(eval)
 {
@@ -280,7 +297,19 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   {
 #ifdef QJS_ENABLE_CIVET
     if (strcmp(dialect, "civet") == 0)
-      script = civet_compile(script);
+    {
+      JSValue compiled = civet_compile(script);
+      const char *compiled_str = JS_ToCString(ctx, compiled);
+      JS_FreeValue(ctx, compiled);
+
+      if (!JS_IsString(compiled))
+      {
+        extism_error_set(
+            extism_alloc_buf_from_sz(compiled_str));
+        return 2;
+      }
+      script = compiled_str;
+    }
 #endif
     free((void *)dialect);
     dialect = NULL;
@@ -311,7 +340,8 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   free((void *)script);
   if (JS_IsException(val))
   {
-    js_std_dump_error(ctx);
+    extism_error_set(
+        extism_alloc_buf_from_sz(JS_ToCString(ctx, val)));
     JS_FreeValue(ctx, val);
     if (cli)
       deinit_js();
@@ -351,7 +381,18 @@ int32_t EXTISM_EXPORTED_FUNCTION(civet)
   extism_load_input(0, input_data, input_len);
   input_data[input_len] = '\0';
   const char *script = (char *)input_data;
-  script = civet_compile(script);
+
+  JSValue compiled = civet_compile(script);
+  const char *compiled_str = JS_ToCString(ctx, compiled);
+  JS_FreeValue(ctx, compiled);
+
+  if (!JS_IsString(compiled))
+  {
+    extism_error_set(
+        extism_alloc_buf_from_sz(compiled_str));
+    return 2;
+  }
+  script = compiled_str;
 
   const uint64_t len = strlen(script);
   ExtismHandle handle = extism_alloc(len);
