@@ -1,0 +1,35 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Test
+    strategy:
+      matrix:
+        go-version: [1.23.x, 1.24.x]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{matrix.platform}}
+    steps:
+      - name: Set up Go ${{matrix.go-version}}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{matrix.go-version}}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test
+        working-directory: go
+        run: |
+          go mod download
+          go test ./...
+        env:
+          GOPROXY: https://proxy.golang.org
