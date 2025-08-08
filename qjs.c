@@ -287,8 +287,9 @@ int32_t EXTISM_EXPORTED_FUNCTION(setEnv)
   JS_SetPropertyStr(ctx, js_process, "env", JS_DupValue(ctx, json));
 
   const char *setenv_script =
-      "import { setenv } from 'qjs:std';\n"
-      "Object.entries(process.env).forEach((entry)=>setenv(...entry))\n";
+      "import { setenv, unsetenv, getenviron } from 'qjs:std';\n"
+      "Object.keys(getenviron()??{}).forEach(key=>unsetenv(key));\n"
+      "Object.entries(process.env).forEach((entry)=>setenv(...entry));\n";
   eval_buf(ctx, setenv_script, strlen(setenv_script), "<setenv>", JS_EVAL_TYPE_MODULE);
 
   JS_FreeValue(ctx, json);
@@ -304,7 +305,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(unsetEnv)
 
   const char *unsetenv_script =
       "import { unsetenv, getenviron } from 'qjs:std';\n"
-      "Object.keys(getenviron()??{}).forEach(key=>unsetenv(key))\n"
+      "Object.keys(getenviron()??{}).forEach(key=>unsetenv(key));\n"
       "process.env={};\n";
   eval_buf(ctx, unsetenv_script, strlen(unsetenv_script), "<unsetenv>", JS_EVAL_TYPE_MODULE);
   return 0;
