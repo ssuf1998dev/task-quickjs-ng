@@ -290,8 +290,6 @@ int32_t EXTISM_EXPORTED_FUNCTION(setEnv)
       "import { setenv } from 'qjs:std';\n"
       "Object.entries(process.env).forEach((entry)=>setenv(...entry))\n";
   eval_buf(ctx, setenv_script, strlen(setenv_script), "<setenv>", JS_EVAL_TYPE_MODULE);
-  free((void *)setenv_script);
-  setenv_script = NULL;
 
   JS_FreeValue(ctx, json);
   JS_FreeValue(ctx, global);
@@ -324,8 +322,6 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
     int memory_limit = atoi(memory_limit_str);
     if (memory_limit >= 0)
       JS_SetMemoryLimit(rt, (size_t)memory_limit);
-    free((void *)memory_limit_str);
-    memory_limit_str = NULL;
   }
 
   const char *stack_size_str = get_config("eval.stackSize");
@@ -334,8 +330,6 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
     int stack_size = atoi(stack_size_str);
     if (stack_size >= 0)
       JS_SetMaxStackSize(rt, (size_t)stack_size);
-    free((void *)stack_size_str);
-    stack_size_str = NULL;
   }
 
   uint64_t input_len = extism_input_length();
@@ -363,8 +357,6 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
       script = (char *)compiled_str;
     }
 #endif
-    free((void *)dialect);
-    dialect = NULL;
   }
 
   const char *module_str = get_config("eval.module");
@@ -372,11 +364,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   if (!module_str)
     module = JS_DetectModule(script, strlen(script));
   else
-  {
     module = strcmp(module_str, "true") == 0;
-    free((void *)module_str);
-    module_str = NULL;
-  }
 
   char *dir = (char *)get_config("eval.dir");
   if (dir)
@@ -385,10 +373,6 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
     char *chdir_script = "";
     sprintf(chdir_script, "import { chdir, getcwd } from 'qjs:os';chdir(\"%s\");", dir);
     eval_buf(ctx, chdir_script, strlen(chdir_script), "<chdir>", JS_EVAL_TYPE_MODULE);
-    free((void *)dir);
-    dir = NULL;
-    free((void *)chdir_script);
-    chdir_script = NULL;
   }
 
   if (!module)
@@ -401,12 +385,9 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
         "globalThis.std = std;\n"
         "globalThis.os = os;\n";
     eval_buf(ctx, shims_script, strlen(shims_script), "<shims>", JS_EVAL_TYPE_MODULE);
-    free((void *)shims_script);
-    shims_script = NULL;
   }
   int flags = module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL;
   JSValue val = eval_buf(ctx, script, strlen(script), "<eval>", flags);
-  free((void *)script);
   if (JS_IsException(val))
   {
     extism_error_set(
@@ -447,8 +428,6 @@ int32_t EXTISM_EXPORTED_FUNCTION(civet)
   ExtismHandle handle = extism_alloc(len);
   extism_store_to_handle(handle, 0, script, len);
   extism_output_set_from_handle(handle, 0, len);
-
-  free((void *)script);
 
   return 0;
 }
