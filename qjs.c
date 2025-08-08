@@ -237,6 +237,18 @@ static JSValue civet_compile(const char *source)
 }
 #endif
 
+static int guard()
+{
+  if (!rt || !ctx)
+  {
+    extism_error_set(
+        extism_alloc_buf_from_sz("JS runtime or context is not ready, did you warmup?"));
+    return 1;
+  }
+
+  return 0;
+}
+
 /* -------------------------------- exported -------------------------------- */
 
 int32_t EXTISM_EXPORTED_FUNCTION(warmup)
@@ -244,56 +256,43 @@ int32_t EXTISM_EXPORTED_FUNCTION(warmup)
   return init_js();
 }
 
-// int32_t EXTISM_EXPORTED_FUNCTION(cleanup)
-// {
-//   deinit_js();
-//   return 0;
-// }
+int32_t EXTISM_EXPORTED_FUNCTION(cleanup)
+{
+  deinit_js();
+  return 0;
+}
 
 int32_t EXTISM_EXPORTED_FUNCTION(setEnv)
 {
-  JSValue global = JS_GetGlobalObject(ctx);
-  JSValue js_process = JS_GetPropertyStr(ctx, global, "process");
-  JSValue js_process_env = JS_GetPropertyStr(ctx, js_process, "env");
-
-  const char *delim = ";=";
+  if (guard())
+    return 1;
 
   uint64_t input_len = extism_input_length();
   uint8_t input_data[input_len + 1];
   extism_load_input(0, input_data, input_len);
   input_data[input_len] = '\0';
-  char *pairs = (char *)input_data;
+  char *json_str = (char *)input_data;
 
-  char *setenv_script = "import { setenv } from 'qjs:std';";
-
-  char *token = strtok(pairs, delim);
-  char *key = "";
-  while (token != NULL)
+  JSValue json = JS_ParseJSON(ctx, json_str, strlen(json_str), "<json>");
+  if (!JS_IsObject(json))
   {
-    if (strlen(key))
-    {
-      if (strlen(token))
-      {
-        char *line;
-        sprintf(line, "setenv(`%s`, `%s`);", key, token);
-        strcat(setenv_script, line);
-        if (JS_IsObject(js_process_env))
-          JS_SetPropertyStr(ctx, js_process_env, key, JS_NewString(ctx, token));
-      }
-      key = "";
-    }
-    else
-    {
-      key = token;
-    }
-
-    token = strtok(NULL, delim);
+    extism_error_set(
+        extism_alloc_buf_from_sz("Input should be an object."));
+    return 2;
   }
 
+  JSValue global = JS_GetGlobalObject(ctx);
+  JSValue js_process = JS_GetPropertyStr(ctx, global, "process");
+  JS_SetPropertyStr(ctx, js_process, "env", JS_DupValue(ctx, json));
+
+  const char *setenv_script =
+      "import { setenv } from 'qjs:std';\n"
+      "Object.entries(process.env).forEach((entry)=>setenv(...entry))\n";
   eval_buf(ctx, setenv_script, strlen(setenv_script), "<setenv>", JS_EVAL_TYPE_MODULE);
   free((void *)setenv_script);
   setenv_script = NULL;
 
+  JS_FreeValue(ctx, json);
   JS_FreeValue(ctx, global);
 
   return 0;
@@ -301,6 +300,9 @@ int32_t EXTISM_EXPORTED_FUNCTION(setEnv)
 
 int32_t EXTISM_EXPORTED_FUNCTION(unsetEnv)
 {
+  if (guard())
+    return 1;
+
   const char *unsetenv_script =
       "import { unsetenv, getenviron } from 'qjs:std';\n"
       "Object.keys(getenviron()??{}).forEach(key=>unsetenv(key))\n"
@@ -311,26 +313,11 @@ int32_t EXTISM_EXPORTED_FUNCTION(unsetEnv)
 
 int32_t EXTISM_EXPORTED_FUNCTION(eval)
 {
-  const char *cli_str = get_config("cli");
-  bool cli = false;
-  if (cli_str)
-  {
-    cli = strcmp(cli_str, "true") == 0;
-    free((void *)cli_str);
-    cli_str = NULL;
-  }
-
-  if (cli && init_js())
+  if (guard())
     return 1;
 
-  if (!rt || !ctx)
-  {
-    extism_error_set(
-        extism_alloc_buf_from_sz("JS runtime or context is not ready, did you warmup?"));
-    return 1;
-  }
-
-  const char *memory_limit_str = get_config("eval.memoryLimit");
+  const char *
+      memory_limit_str = get_config("eval.memoryLimit");
   if (memory_limit_str)
   {
     int memory_limit = atoi(memory_limit_str);
@@ -421,38 +408,18 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
     extism_error_set(
         extism_alloc_buf_from_sz(JS_ToCString(ctx, val)));
     JS_FreeValue(ctx, val);
-    if (cli)
-      deinit_js();
     return 2;
   }
 
   JS_FreeValue(ctx, val);
-  if (cli)
-    deinit_js();
   return 0;
 }
 
 #ifdef QJS_ENABLE_CIVET
 int32_t EXTISM_EXPORTED_FUNCTION(civet)
 {
-  const char *cli_str = get_config("cli");
-  bool cli = false;
-  if (cli_str)
-  {
-    cli = strcmp(cli_str, "true") == 0;
-    free((void *)cli_str);
-    cli_str = NULL;
-  }
-
-  if (cli && init_js())
+  if (guard())
     return 1;
-
-  if (!rt || !ctx)
-  {
-    extism_error_set(
-        extism_alloc_buf_from_sz("JS runtime or context is not ready, did you warmup?"));
-    return 1;
-  }
 
   uint64_t input_len = extism_input_length();
   uint8_t input_data[input_len + 1];
@@ -478,9 +445,6 @@ int32_t EXTISM_EXPORTED_FUNCTION(civet)
   extism_output_set_from_handle(handle, 0, len);
 
   free((void *)script);
-
-  if (cli)
-    deinit_js();
 
   return 0;
 }

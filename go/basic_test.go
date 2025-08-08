@@ -56,7 +56,7 @@ func TestEnv(t *testing.T) {
 	_, _, err = plugin.Call("warmup", nil)
 	require.NoError(t, err)
 
-	_, _, err = plugin.Call("setEnv", []byte("a=b;c=d;e"))
+	_, _, err = plugin.Call("setEnv", []byte("{\"a\":\"b\",\"c\":\"d\"}"))
 	require.NoError(t, err)
 
 	_, _, err = plugin.Call("eval", []byte(`
