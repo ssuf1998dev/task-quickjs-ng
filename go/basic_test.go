@@ -3,6 +3,8 @@ package tqn_test
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -85,4 +87,32 @@ print(JSON.stringify(std.getenviron()));`))
 	require.NoError(t, err)
 	assert.Equal(t, "{}", strings.TrimSuffix(buf.String(), "\n"))
 	buf.Reset()
+}
+
+func TestDir(t *testing.T) {
+	dir, _ := os.Getwd()
+	dir = filepath.Dir(dir)
+
+	manifest := extism.Manifest{
+		Wasm:   []extism.Wasm{extism.WasmFile{Path: "../build/qjs.wasm"}},
+		Config: map[string]string{},
+	}
+
+	ctx := context.Background()
+	var buf bytes.Buffer
+	config := extism.PluginConfig{
+		EnableWasi: true,
+		ModuleConfig: wazero.NewModuleConfig().
+			WithFSConfig(wazero.NewFSConfig().WithDirMount(dir, "/")).
+			WithStdout(&buf),
+	}
+	plugin, err := extism.NewPlugin(ctx, manifest, config, []extism.HostFunction{})
+	require.NoError(t, err)
+	defer plugin.Close(ctx)
+
+	_, _, err = plugin.Call("warmup", nil)
+	require.NoError(t, err)
+	plugin.Config["eval.dir"] = "/go"
+	plugin.Call("eval", []byte("import {getcwd} from 'qjs:os';print(getcwd()[0]);"))
+	assert.Equal(t, "/go\n", buf.String())
 }

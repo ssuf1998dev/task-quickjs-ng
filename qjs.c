@@ -3,6 +3,7 @@
 #include "quickjs/quickjs.h"
 #include "quickjs/quickjs-libc.h"
 #include "quickjs/cutils.h"
+#include "strrepl.c"
 #ifdef QJS_ENABLE_CIVET
 #include "civet.h"
 #endif
@@ -341,7 +342,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   uint8_t input_data[input_len + 1];
   extism_load_input(0, input_data, input_len);
   input_data[input_len] = '\0';
-  const char *script = (char *)input_data;
+  char *script = (char *)input_data;
 
   const char *dialect = get_config("eval.dialect");
   if (dialect)
@@ -359,7 +360,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
             extism_alloc_buf_from_sz(compiled_str));
         return 2;
       }
-      script = compiled_str;
+      script = (char *)compiled_str;
     }
 #endif
     free((void *)dialect);
@@ -371,15 +372,18 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   if (!module_str)
     module = JS_DetectModule(script, strlen(script));
   else
+  {
     module = strcmp(module_str, "true") == 0;
-  free((void *)module_str);
-  module_str = NULL;
+    free((void *)module_str);
+    module_str = NULL;
+  }
 
-  const char *dir = get_config("eval.dir");
+  char *dir = (char *)get_config("eval.dir");
   if (dir)
   {
-    char *chdir_script;
-    sprintf(chdir_script, "import { chdir, getcwd } from 'qjs:os';chdir(`%s`);", dir);
+    dir = strrepl(dir, "\"", "\\\"");
+    char *chdir_script = "";
+    sprintf(chdir_script, "import { chdir, getcwd } from 'qjs:os';chdir(\"%s\");", dir);
     eval_buf(ctx, chdir_script, strlen(chdir_script), "<chdir>", JS_EVAL_TYPE_MODULE);
     free((void *)dir);
     dir = NULL;
