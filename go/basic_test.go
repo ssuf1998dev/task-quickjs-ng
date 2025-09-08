@@ -116,3 +116,35 @@ func TestDir(t *testing.T) {
 	plugin.Call("eval", []byte("import {getcwd} from 'qjs:os';print(getcwd()[0]);"))
 	assert.Equal(t, "/go\n", buf.String())
 }
+
+func TestEvalFile(t *testing.T) {
+	dir, _ := os.Getwd()
+
+	manifest := extism.Manifest{
+		Wasm:   []extism.Wasm{extism.WasmFile{Path: "../build/qjs.wasm"}},
+		Config: map[string]string{},
+	}
+
+	ctx := context.Background()
+	var buf bytes.Buffer
+	config := extism.PluginConfig{
+		EnableWasi: true,
+		ModuleConfig: wazero.NewModuleConfig().
+			WithFSConfig(wazero.NewFSConfig().WithDirMount("/", "/")).
+			WithStdout(&buf),
+	}
+	plugin, err := extism.NewPlugin(ctx, manifest, config, []extism.HostFunction{})
+	require.NoError(t, err)
+	defer plugin.Close(ctx)
+
+	_, _, err = plugin.Call("warmup", nil)
+	require.NoError(t, err)
+
+	plugin.Call("evalFile", []byte(filepath.Join(dir, "testdata/script.js")))
+	assert.Equal(t, "hello js\n", buf.String())
+	buf.Reset()
+
+	plugin.Config["evalFile.dialect"] = "civet"
+	plugin.Call("evalFile", []byte(filepath.Join(dir, "testdata/script.civet")))
+	assert.Equal(t, "hello civet\n", buf.String())
+}

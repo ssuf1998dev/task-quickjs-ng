@@ -401,6 +401,80 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   return 0;
 }
 
+int32_t EXTISM_EXPORTED_FUNCTION(evalFile)
+{
+  if (guard())
+    return 1;
+
+  const char *
+      memory_limit_str = get_config("evalFile.memoryLimit");
+  if (memory_limit_str)
+  {
+    int memory_limit = atoi(memory_limit_str);
+    if (memory_limit >= 0)
+      JS_SetMemoryLimit(rt, (size_t)memory_limit);
+  }
+
+  const char *stack_size_str = get_config("evalFile.stackSize");
+  if (stack_size_str)
+  {
+    int stack_size = atoi(stack_size_str);
+    if (stack_size >= 0)
+      JS_SetMaxStackSize(rt, (size_t)stack_size);
+  }
+
+  uint64_t input_len = extism_input_length();
+  uint8_t input_data[input_len + 1];
+  extism_load_input(0, input_data, input_len);
+  input_data[input_len] = '\0';
+  char *filename = (char *)input_data;
+
+  uint8_t *buf;
+  size_t buf_len;
+  buf = js_load_file(ctx, &buf_len, filename);
+  if (!buf)
+  {
+    extism_error_set(
+        extism_alloc_buf_from_sz("load file failed"));
+    return 2;
+  }
+  char *script = (char *)buf;
+
+  const char *dialect = get_config("evalFile.dialect");
+#ifdef QJS_ENABLE_CIVET
+  if (strcmp(dialect, "civet") == 0 || js__has_suffix(filename, ".civet"))
+  {
+    JSValue compiled = civet_compile(script);
+    const char *compiled_str = JS_ToCString(ctx, compiled);
+    JS_FreeValue(ctx, compiled);
+
+    if (!JS_IsString(compiled))
+    {
+      extism_error_set(
+          extism_alloc_buf_from_sz(compiled_str));
+      return 2;
+    }
+    script = (char *)compiled_str;
+  }
+#endif
+
+  const char *module_str = get_config("evalFile.module");
+  int module = (js__has_suffix(filename, ".mjs") || strcmp(module_str, "true") == 0 ||
+                JS_DetectModule(script, strlen(script)));
+  int flags = module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL;
+  JSValue val = eval_buf(ctx, script, strlen(script), filename, flags);
+  if (JS_IsException(val))
+  {
+    extism_error_set(
+        extism_alloc_buf_from_sz(JS_ToCString(ctx, val)));
+    JS_FreeValue(ctx, val);
+    return 2;
+  }
+
+  JS_FreeValue(ctx, val);
+  return 0;
+}
+
 #ifdef QJS_ENABLE_CIVET
 int32_t EXTISM_EXPORTED_FUNCTION(civet)
 {
