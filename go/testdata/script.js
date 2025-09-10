@@ -1,1 +1,1 @@
-print("hello js")
+print("hello js");

@@ -130,7 +130,7 @@ func TestEvalFile(t *testing.T) {
 	config := extism.PluginConfig{
 		EnableWasi: true,
 		ModuleConfig: wazero.NewModuleConfig().
-			WithFSConfig(wazero.NewFSConfig().WithDirMount("/", "/")).
+			WithFSConfig(wazero.NewFSConfig().WithDirMount(dir, "/")).
 			WithStdout(&buf),
 	}
 	plugin, err := extism.NewPlugin(ctx, manifest, config, []extism.HostFunction{})
@@ -140,11 +140,23 @@ func TestEvalFile(t *testing.T) {
 	_, _, err = plugin.Call("warmup", nil)
 	require.NoError(t, err)
 
-	plugin.Call("evalFile", []byte(filepath.Join(dir, "testdata/script.js")))
+	plugin.Call("evalFile", []byte("/testdata/script.js"))
 	assert.Equal(t, "hello js\n", buf.String())
 	buf.Reset()
 
+	plugin.Config["evalFile.dir"] = "/testdata"
+	plugin.Call("evalFile", []byte("/testdata/dir.js"))
+	assert.Equal(t, "/testdata\n", buf.String())
+	buf.Reset()
+	plugin.Config["evalFile.dir"] = "/"
+
+	plugin.Config["evalFile.argv0"] = "/"
+	plugin.Config["evalFile.scriptArgs"] = `["a", "b", "c"]`
+	plugin.Call("evalFile", []byte("/testdata/args.js"))
+	assert.Equal(t, "argv0 /\nscriptArgs a b c\n", buf.String())
+	buf.Reset()
+
 	plugin.Config["evalFile.dialect"] = "civet"
-	plugin.Call("evalFile", []byte(filepath.Join(dir, "testdata/script.civet")))
+	plugin.Call("evalFile", []byte("/testdata/script.civet"))
 	assert.Equal(t, "hello civet\n", buf.String())
 }

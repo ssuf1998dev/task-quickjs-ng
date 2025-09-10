@@ -372,7 +372,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(eval)
   {
     dir = strrepl(dir, "\"", "\\\"");
     char *chdir_script = "";
-    sprintf(chdir_script, "import { chdir, getcwd } from 'qjs:os';chdir(\"%s\");", dir);
+    sprintf(chdir_script, "import { chdir } from 'qjs:os';chdir(\"%s\");", dir);
     eval_buf(ctx, chdir_script, strlen(chdir_script), "<chdir>", JS_EVAL_TYPE_MODULE);
   }
 
@@ -458,10 +458,37 @@ int32_t EXTISM_EXPORTED_FUNCTION(evalFile)
   }
 #endif
 
+  char *dir = (char *)get_config("evalFile.dir");
+  if (dir)
+  {
+    dir = strrepl(dir, "\"", "\\\"");
+    char *chdir_script = "";
+    sprintf(chdir_script, "import { chdir } from 'qjs:os';chdir(\"%s\");", dir);
+    eval_buf(ctx, chdir_script, strlen(chdir_script), "<chdir>", JS_EVAL_TYPE_MODULE);
+  }
+
   const char *module_str = get_config("evalFile.module");
   int module = (js__has_suffix(filename, ".mjs") || strcmp(module_str, "true") == 0 ||
                 JS_DetectModule(script, strlen(script)));
   int flags = module ? JS_EVAL_TYPE_MODULE : JS_EVAL_TYPE_GLOBAL;
+
+  JSValue global = JS_GetGlobalObject(ctx);
+  char *argv0 = (char *)get_config("evalFile.argv0");
+  if (!argv0)
+    argv0 = "";
+  JS_SetPropertyStr(ctx, global, "argv0", JS_NewString(ctx, argv0));
+  char *scriptArgs = (char *)get_config("evalFile.scriptArgs");
+  if (scriptArgs)
+  {
+    JSValue args = JS_ParseJSON(ctx, scriptArgs, strlen(scriptArgs), NULL);
+    if (JS_IsArray(args))
+      JS_SetPropertyStr(ctx, global, "scriptArgs", args);
+  }
+  else
+  {
+    JS_SetPropertyStr(ctx, global, "scriptArgs", JS_NewArray(ctx));
+  }
+
   JSValue val = eval_buf(ctx, script, strlen(script), filename, flags);
   if (JS_IsException(val))
   {
@@ -472,6 +499,7 @@ int32_t EXTISM_EXPORTED_FUNCTION(evalFile)
   }
 
   JS_FreeValue(ctx, val);
+  JS_FreeValue(ctx, global);
   return 0;
 }
 
